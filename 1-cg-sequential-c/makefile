@@ -1,43 +1,109 @@
-# https://spin.atomicobject.com/2016/08/26/makefile-c-projects/
+# ==============================================================================
+# 	MAKEFILE
+# ==============================================================================
 
-TARGET_EXEC ?= exec 
+# Project name
+TARGET_NAME = $(shell basename $(CURDIR))
 
-BUILD_DIR ?= ./build
-SRC_DIRS ?= ./src
+# Directories
+DIR_SRC = src
+DIR_INC = include
+DIR_BUILD = build
+DIR_BIN = bin
 
-SRCS := $(shell find $(SRC_DIRS) -name *.cpp -or -name *.c -or -name *.s)
-OBJS := $(SRCS:%=$(BUILD_DIR)/%.o)
-DEPS := $(OBJS:.o=.d)
+# ------------------------------------------------------------------------------
+# 	COMPILING ANS LINKING
+# ------------------------------------------------------------------------------
 
-INC_DIRS := ./include# $(shell find $(SRC_DIRS) -type d)
-INC_FLAGS := $(addprefix -I,$(INC_DIRS))
+# Compiler
+CC = clang
 
-CPPFLAGS ?= $(INC_FLAGS) -MMD -MP
+# External libraries
+MPI_HOME =
+MPI_INC =
+MPI_LIBS =
 
-$(BUILD_DIR)/$(TARGET_EXEC): $(OBJS)
-	$(CC) $(OBJS) -o $@ $(LDFLAGS)
+LLVM_HOME	= /usr/local/opt/llvm
+LLVM_INC	= -I$(LLVM_HOME)/include
+LLVM_LIBS	= -L$(LLVM_HOME)/lib -fopenmp
 
-# assembly
-$(BUILD_DIR)/%.s.o: %.s
+# Gather Libraries
+ADD_INC 	= $(MPI_INC) $(LLVM_INC)
+ADD_LIBS 	= $(MPI_LIBS) $(LLVM_LIBS)
+ADD_VARS	= -DTIMER #-DOMP # -DSIMPLE_CG
+
+# Compiling flags
+CFLAGS = -Rpass=inline -mavx2 -Wall -Wextra -O3 $(ADD_INC) $(ADD_VARS)
+
+# Linking flags
+LDFLAGS = $(ADD_LIBS)
+
+# ------------------------------------------------------------------------------
+# 	VARIABLE CONSTRUCTION
+# ------------------------------------------------------------------------------
+
+# File groups
+SOURCES		= $(wildcard $(DIR_SRC)/*.c)
+HEADERS		= $(wildcard $(DIR_INC)/*.h)
+OBJECTS		= $(SOURCES:$(DIR_SRC)/%.c=$(DIR_BUILD)/%.o)
+DEPS		= $(OBJECTS:$(DIR_BUILD)/%.o=$(DIR_BUILD)/%.d)
+RM 			= rm -f
+MKDIR_P 	= mkdir -p
+
+# Project path
+TARGET = $(DIR_BIN)/$(TARGET_NAME)
+
+# ------------------------------------------------------------------------------
+# 	RULES
+# ------------------------------------------------------------------------------
+
+# Specific target specification
+.PHONY: all, clean, deep-clean, message
+
+# ALL RULE
+all: message $(TARGET)
+
+# Disable implicit rules
+.SUFFIXES:
+
+# CREATING EXECUTABLE RULE
+$(TARGET): $(OBJECTS)
 	$(MKDIR_P) $(dir $@)
-	$(AS) $(ASFLAGS) -c $< -o $@
+	@echo "Creation of the executable" $@
+	$(CC) $^ -o $@ $(LDFLAGS)
+	@echo "Executable" $@ "created successfully!"
+	@echo "===================================================================="
 
-# c source
-$(BUILD_DIR)/%.c.o: %.c
+# CREATING OBJETS INFERENCE RULE
+$(DIR_BUILD)/%.o : $(DIR_SRC)/%.c
 	$(MKDIR_P) $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
-
-# c++ source
-$(BUILD_DIR)/%.cpp.o: %.cpp
-	$(MKDIR_P) $(dir $@)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+	@echo "Compilation of "$<" starts!"
+	$(CC) -c $^ -o $@ $(CFLAGS) -I$(DIR_INC)
+	@echo "Compilation of "$<" finished successfully!"
+	@echo "===================================================================="
 
 
-.PHONY: clean
-
-clean:
-	$(RM) -r $(BUILD_DIR)
-
+# DEPENDENCIES FOR THE OBJECT INFERENCE RULE
 -include $(DEPS)
 
-MKDIR_P ?= mkdir -p
+run:
+	./$(TARGET)
+
+message:
+	@echo "===================================================================="
+	@echo "Application $(TARGET_NAME)"
+	@echo "Information:"
+	@echo  "\tEXECUTABLE:" $(TARGET)
+	@echo  "\tCOMPILER:" $(CC)
+	@echo "===================================================================="
+# CLEAN RULE
+clean:
+	$(RM) $(OBJECTS) $(DEPS)
+	$(RM) -r $(DIR_BUILD)
+	@echo "Cleanup completed!"
+
+# DEEP-CLEAN RULE
+deep-clean: clean
+	$(RM) $(OBJECTS) $(DEPS) $(TARGET)
+	$(RM) -r $(DIR_BUILD) $(DIR_BIN)
+	@echo "Total cleanup completed!"
